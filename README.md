@@ -43,15 +43,6 @@ cd ola-ride-analysis
 
 pip install -r requirements.txt
 
-## Sample requirements.txt:
-
-pandas
-numpy
-matplotlib
-seaborn
-sqlite3-binary
-streamlit
-
 3️⃣ Create SQLite database
 
 python db_setup.py
