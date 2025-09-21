@@ -77,9 +77,11 @@ SQL Query Runner → Write and run custom queries
 
 ## 📂 Project Structure  
 
-Ola-Ride-Analysis/
-│── db_setup.py # Script to load CSV → SQLite database
-│── app.py # Streamlit app for interactive dashboard
-│── ola_clean.csv # Cleaned dataset (not in repo if confidential)
-│── ola_rides.db # SQLite database created from CSV
-│── README.md # Project documentation
+ola project/
+│── app.py
+│── db_setup.py
+│── ola_rides.db
+│── queries.sql
+│── requirements.txt
+│── runtime.txt
+
