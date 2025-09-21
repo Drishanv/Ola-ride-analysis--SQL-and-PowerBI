@@ -19,14 +19,15 @@
 
 import os
 import sqlite3
-import pandas as pd
-import numpy as np
-import streamlit as st
+from pathlib import Path
 from datetime import date
+
+import pandas as pd
+import streamlit as st
 
 st.set_page_config(page_title="OLA Rides Insights", layout="wide")
 
-# ---------- Helpers (NO caching on functions that receive a sqlite3.Connection)
+# ---------- Helpers (no caching on functions that take a sqlite3.Connection)
 @st.cache_resource(show_spinner=False)
 def get_conn(db_path: str):
     if not os.path.exists(db_path):
@@ -64,9 +65,14 @@ def distinct_values(db_path: str, table: str, col: str):
 def to_csv_bytes(df: pd.DataFrame) -> bytes:
     return df.to_csv(index=False).encode("utf-8")
 
-# ---------- Sidebar: DB connect
+# ---------- Sidebar: DB connect (robust default path)
+APP_DIR = Path(__file__).parent
+default_db = str((APP_DIR / "ola_rides.db").resolve())
+
 st.sidebar.header("🔌 Data Source")
-db_path = st.sidebar.text_input("SQLite DB path", value="ola_rides.db")
+db_path = st.sidebar.text_input("SQLite DB path", value=default_db)
+
+# Create/store a single connection resource
 if "conn" not in st.session_state and os.path.exists(db_path):
     st.session_state.conn = get_conn(db_path)
 
@@ -124,8 +130,9 @@ in an interactive Streamlit application (and optionally in Power BI).
 
     st.caption(f"Connected DB: **{db_path}** | Tables: {', '.join(tables)} | Views: {', '.join(views) or '—'}")
 
+# ====== 2) EXPLORE (table only) ======
 with tab_explore:
-    st.title("🔭 Explore — Filter Table data")
+    st.title("🔭 Explore — Filter Table Data")
 
     # ---- Filters
     st.sidebar.header("🔎 Filters")
@@ -177,9 +184,13 @@ with tab_explore:
 
     # ---- Show table only
     st.subheader("Filtered Results")
-    st.dataframe(df_filtered, use_container_width=True, height=500)
-    st.download_button("Download filtered CSV", data=to_csv_bytes(df_filtered),
-                       file_name="ola_filtered.csv", mime="text/csv")
+    st.dataframe(df_filtered, use_container_width=True, height=520)
+    st.download_button(
+        "Download filtered CSV",
+        data=to_csv_bytes(df_filtered),
+        file_name="ola_filtered.csv",
+        mime="text/csv"
+    )
 
 # ====== 3) SQL RUNNER ======
 with tab_sql:
@@ -250,8 +261,12 @@ with tab_sql:
                     res = run_sql_df(conn, sql_text)
                     st.success(f"Returned {len(res)} rows")
                     st.dataframe(res, use_container_width=True, height=420)
-                    st.download_button("Download results as CSV", data=to_csv_bytes(res),
-                                       file_name="sql_results.csv", mime="text/csv")
+                    st.download_button(
+                        "Download results as CSV",
+                        data=to_csv_bytes(res),
+                        file_name="sql_results.csv",
+                        mime="text/csv"
+                    )
             except Exception as e:
                 st.error(f"Query error: {e}")
     with col_clear:
