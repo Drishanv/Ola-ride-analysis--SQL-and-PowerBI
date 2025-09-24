@@ -328,15 +328,26 @@ with tab_pdf:
                 st.caption(f"Page {page_index} — {PAGE_TITLES[page_index-1]}")
                 st.components.v1.html(
                     f"""
-                    <embed
-                      src="data:application/pdf;base64,{b64}#page={page_index}&zoom=page-width"
-                      type="application/pdf"
-                      width="100%"
-                      height="900px"
-                    />
-                    """,
-                    height=920,
-                )
+    <div style="height:900px;width:100%;">
+      <!-- Try <object> first -->
+      <object
+        data="data:application/pdf;base64,{b64}#page={page_index}&zoom=page-width"
+        type="application/pdf"
+        width="100%"
+        height="100%"
+      >
+        <!-- Fallback to <iframe> -->
+        <iframe
+          src="data:application/pdf;base64,{b64}#page={page_index}&zoom=page-width"
+          width="100%"
+          height="100%"
+          style="border:0;"
+        ></iframe>
+      </object>
+    </div>
+    """,
+    height=920,
+)
 
         # Optional: download the original PDF
         st.download_button(
