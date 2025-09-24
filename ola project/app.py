@@ -1,23 +1,16 @@
-# OLA Rides Insights
-# ---------------------------------------------------
+# app.py — OLA Rides Insights (with simple Power BI PDF viewer)
+# -------------------------------------------------------------
 # Tabs:
 #   1) Project Overview (Problem Statement + Business Use Cases)
 #   2) Explore (filters, KPIs, quick charts, searchable table)
 #   3) SQL Runner (predefined & custom SELECT queries)
+#   4) Power BI (PDF) — simple built-in viewer (no extra dependencies)
 #
 # Expects a SQLite DB file 'ola_rides.db' with a table named 'bookings'.
-# Change the DB path in the sidebar if needed.
-
-# app.py — OLA Rides Insights (fixed caching for SQLite)
-# ---------------------------------------------------
-# Tabs:
-#   1) Project Overview
-#   2) Explore (filters, KPIs, charts, search & download)
-#   3) SQL Runner (predefined & custom SELECT)
-#
-# Expects a SQLite DB file 'ola_rides.db' with table 'bookings'.
+# Expects an exported Power BI PDF named 'Ola ride analysis.pdf' (or upload it).
 
 import os
+import base64
 import sqlite3
 from pathlib import Path
 from datetime import date
@@ -104,8 +97,10 @@ has_cust_id  = "customer_id" in all_cols
 has_pickup   = "pickup_location" in all_cols
 has_drop     = "drop_location" in all_cols
 
-# ---------- Tabs
-tab_overview, tab_explore, tab_sql = st.tabs(["📘 Project Overview", "🔭 Explore", "🧠 SQL Runner"])
+# ---------- Tabs (added a 4th tab for Power BI PDF)
+tab_overview, tab_explore, tab_sql, tab_pdf = st.tabs(
+    ["📘 Project Overview", "🔭 Explore", "🧠 SQL Runner", "📄 Power BI Visuals"]
+)
 
 # ====== 1) OVERVIEW ======
 with tab_overview:
@@ -125,7 +120,7 @@ in an interactive Streamlit application (and optionally in Power BI).
 - **Customer behavior** — Segment riders for **personalized marketing** and retention.  
 - **Pricing intelligence** — Understand pricing patterns and **surge effectiveness**.  
 - **Risk & anomalies** — Detect **outliers/fraud** (abnormal booking values, repeated cancels).  
-- **Quality monitoring** — Track **ratings** to improve driver performance & customer experience.  
+- **Quality monitoring** — Track **ratings** to improve driver performance & customer experience**.  
     """)
 
     st.caption(f"Connected DB: **{db_path}** | Tables: {', '.join(tables)} | Views: {', '.join(views) or '—'}")
@@ -272,3 +267,86 @@ with tab_sql:
     with col_clear:
         if st.button("Clear", use_container_width=True):
             st.experimental_rerun()
+
+# ====== 4) POWER BI (PDF) — simple built-in viewer (no extra dependencies) ======
+with tab_pdf:
+    st.title("📄 Power BI Visuals")
+
+    DEFAULT_PDF_NAME = "Ola ride analysis.pdf"
+    PAGE_TITLES = ["Overall", "Vehicle Type", "Revenue", "Cancellation", "Ratings"]  # rename if needed
+    pdf_path = (APP_DIR / DEFAULT_PDF_NAME)
+
+    with st.expander("PDF source / upload", expanded=False):
+        st.write(
+            "The app looks for a PDF called "
+            f"`{DEFAULT_PDF_NAME}` next to `app.py`. If it's not found, upload it below."
+        )
+
+    uploaded = None
+    if not pdf_path.exists():
+        uploaded = st.file_uploader("Upload your Power BI PDF", type=["pdf"])
+        if uploaded is not None:
+            pdf_bytes = uploaded.read()
+            st.success("PDF loaded from upload.")
+    else:
+        st.success(f"Found PDF file: {pdf_path.name}")
+
+    @st.cache_data(show_spinner=False)
+    def load_pdf_bytes_from_disk(path: Path) -> bytes:
+        return path.read_bytes()
+
+    pdf_bytes: bytes | None = None
+    if pdf_path.exists():
+        try:
+            pdf_bytes = load_pdf_bytes_from_disk(pdf_path)
+        except Exception as e:
+            st.error(f"Couldn't read `{pdf_path}`: {e}")
+    elif uploaded is not None:
+        # Already read into pdf_bytes above
+        pass
+
+    # If uploaded but pdf_bytes not set from disk path, use uploaded buffer
+    if (uploaded is not None) and (pdf_bytes is None):
+        pdf_bytes = uploaded.getvalue()
+
+    st.divider()
+    st.subheader("Embedded PDF Viewer")
+
+    if not pdf_bytes:
+        st.warning(
+            "No PDF available yet. Upload the file above or place "
+            f"`{DEFAULT_PDF_NAME}` next to `app.py` and refresh."
+        )
+    else:
+        # Base64 encode once; reuse for each page tab
+        b64 = base64.b64encode(pdf_bytes).decode("utf-8")
+
+        # Sub-tabs for each page in the PDF
+        subtabs = st.tabs(PAGE_TITLES)
+        for page_index, subtab in enumerate(subtabs, start=1):
+            with subtab:
+                st.caption(f"Page {page_index} — {PAGE_TITLES[page_index-1]}")
+                st.components.v1.html(
+                    f"""
+                    <embed
+                      src="data:application/pdf;base64,{b64}#page={page_index}&zoom=page-width"
+                      type="application/pdf"
+                      width="100%"
+                      height="900px"
+                    />
+                    """,
+                    height=920,
+                )
+
+        # Optional: download the original PDF
+        st.download_button(
+            "Download original PDF",
+            data=pdf_bytes,
+            file_name=DEFAULT_PDF_NAME,
+            mime="application/pdf",
+        )
+
+# ------------------- Footer -------------------
+st.caption(
+    "Tip: Rename or reorder the Power BI page tabs by editing PAGE_TITLES in the '📄 Power BI (PDF)' section."
+)
