@@ -1,16 +1,16 @@
-# app.py — OLA Rides Insights (with simple Power BI PDF viewer)
+# app.py — OLA Rides Insights (with resilient Power BI PDF viewer)
 # -------------------------------------------------------------
 # Tabs:
 #   1) Project Overview (Problem Statement + Business Use Cases)
 #   2) Explore (filters, KPIs, quick charts, searchable table)
 #   3) SQL Runner (predefined & custom SELECT queries)
-#   4) Power BI (PDF) — simple built-in viewer (no extra dependencies)
+#   4) Power BI (PDF) — robust viewer (component -> images -> download)
 #
-# Expects a SQLite DB file 'ola_rides.db' with a table named 'bookings'.
-# Expects an exported Power BI PDF named 'Ola ride analysis.pdf' (or upload it).
+# Expects:
+#   - SQLite DB file 'ola_rides.db' with a table named 'bookings'
+#   - Exported Power BI PDF named 'Ola ride analysis.pdf' (or upload in UI)
 
 import os
-import base64
 import sqlite3
 from pathlib import Path
 from datetime import date
@@ -111,7 +111,7 @@ with tab_overview:
 The rise of ride-sharing platforms has transformed urban mobility, offering convenience and affordability to millions of users.
 **OLA** generates vast amounts of data (bookings, driver availability, pricing, preferences). To enhance operational efficiency,
 improve customer satisfaction, and optimize strategy, this project cleans and analyzes OLA’s data, performs EDA, and presents insights
-in an interactive Streamlit application (and optionally in Power BI).
+in an interactive Streamlit application by embedding Power BI visuals).
 """)
 
     st.subheader("Business Use Cases")
@@ -268,7 +268,7 @@ with tab_sql:
         if st.button("Clear", use_container_width=True):
             st.experimental_rerun()
 
-# ====== 4) POWER BI (PDF) — simple built-in viewer (no extra dependencies) ======
+# ====== 4) POWER BI (PDF) — robust viewer ======
 with tab_pdf:
     st.title("📄 Power BI Visuals")
 
@@ -310,7 +310,7 @@ with tab_pdf:
         pdf_bytes = uploaded.getvalue()
 
     st.divider()
-    st.subheader("Embedded PDF Viewer")
+    st.subheader("Viewer")
 
     if not pdf_bytes:
         st.warning(
@@ -318,46 +318,68 @@ with tab_pdf:
             f"`{DEFAULT_PDF_NAME}` next to `app.py` and refresh."
         )
     else:
-        # Base64 encode once; reuse for each page tab
-        b64 = base64.b64encode(pdf_bytes).decode("utf-8")
+        # Try 1: dedicated PDF component (best UX)
+        tried_component = False
+        try:
+            from streamlit_pdf_viewer import pdf_viewer  # pip install streamlit-pdf-viewer
+            tried_component = True
+            pdf_viewer(
+                pdf_bytes,
+                height=900,
+                pages_to_render=list(range(1, len(PAGE_TITLES) + 1)),  # 1..5
+                render_text=True,
+                key="pbi_pdf_viewer",
+            )
+        except Exception as _e_component:
+            # Try 2: render pages to PNG (works in all browsers)
+            try:
+                import fitz  # PyMuPDF
+                @st.cache_data(show_spinner=False)
+                def render_pdf_to_images(pdf_raw: bytes, zoom: float = 2.0):
+                    imgs = []
+                    with fitz.open(stream=pdf_raw, filetype="pdf") as doc:
+                        mat = fitz.Matrix(zoom, zoom)
+                        for i, page in enumerate(doc):
+                            pix = page.get_pixmap(matrix=mat, alpha=False)
+                            imgs.append((i+1, pix.tobytes("png")))
+                    return imgs
 
-        # Sub-tabs for each page in the PDF
-        subtabs = st.tabs(PAGE_TITLES)
-        for page_index, subtab in enumerate(subtabs, start=1):
-            with subtab:
-                st.caption(f"Page {page_index} — {PAGE_TITLES[page_index-1]}")
-                st.components.v1.html(
-                    f"""
-    <div style="height:900px;width:100%;">
-      <!-- Try <object> first -->
-      <object
-        data="data:application/pdf;base64,{b64}#page={page_index}&zoom=page-width"
-        type="application/pdf"
-        width="100%"
-        height="100%"
-      >
-        <!-- Fallback to <iframe> -->
-        <iframe
-          src="data:application/pdf;base64,{b64}#page={page_index}&zoom=page-width"
-          width="100%"
-          height="100%"
-          style="border:0;"
-        ></iframe>
-      </object>
-    </div>
-    """,
-    height=920,
-)
+                colz1, colz2 = st.columns([1,3])
+                with colz1:
+                    zoom = st.slider("Render scale", 1.0, 3.0, 2.0, 0.25)
+                with colz2:
+                    st.caption("Increase scale for sharper images on big screens.")
 
-        # Optional: download the original PDF
-        st.download_button(
-            "Download original PDF",
-            data=pdf_bytes,
-            file_name=DEFAULT_PDF_NAME,
-            mime="application/pdf",
-        )
+                images = render_pdf_to_images(pdf_bytes, zoom=zoom)
+
+                # Page subtabs
+                subtabs = st.tabs(PAGE_TITLES)
+                for (page_no, png), subtab in zip(images, subtabs):
+                    with subtab:
+                        title = PAGE_TITLES[page_no-1] if page_no-1 < len(PAGE_TITLES) else f"Page {page_no}"
+                        st.caption(f"Page {page_no} — {title}")
+                        st.image(png, use_column_width=True)
+                        st.download_button(
+                            f"Download page {page_no} as PNG",
+                            data=png,
+                            file_name=f"powerbi_page_{page_no}.png",
+                            mime="image/png",
+                            key=f"dl_png_{page_no}"
+                        )
+            except Exception as _e_images:
+                # Try 3: fall back to download/open
+                if tried_component:
+                    st.info("Your browser blocked embedded PDFs. Use the download button or open in another browser.")
+                else:
+                    st.info("Viewer component unavailable. Use the download button or try another browser.")
+                st.download_button(
+                    "Download original PDF",
+                    data=pdf_bytes,
+                    file_name=DEFAULT_PDF_NAME,
+                    mime="application/pdf",
+                )
 
 # ------------------- Footer -------------------
 st.caption(
-    "Tip: Rename or reorder the Power BI page tabs by editing PAGE_TITLES in the '📄 Power BI (PDF)' section."
+    "Tip: Rename/reorder the PDF page tabs via PAGE_TITLES in the '📄 Power BI (PDF)' section."
 )
